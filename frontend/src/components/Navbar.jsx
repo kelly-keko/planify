@@ -35,7 +35,7 @@ const Navbar = () => {
   else if (role === 'MEMBRE') dashboardLink = '/dashboard/membre';
 
   return (
-    <nav className="bg-white shadow-md px-6 py-4 flex justify-between items-center">
+    <nav className="bg-white shadow-md px-6 py-3 flex justify-between items-center fixed top-0 left-0 right-0 z-50">
       {/* <h1
         onClick={() => navigate('/projets')}
         className="text-xl font-bold text-blue-600 cursor-pointer"
@@ -43,24 +43,9 @@ const Navbar = () => {
         ProManager
       </h1> */}
 
-      {/* Logo */}
-        <img src="./public/assets/logo.png" alt="Logo ProManager" className="w-40 h-50 mx-auto mb-0" />
+      {/* Logo à gauche */}
+      <img src="/assets/logo.png" alt="Logo ProManager" className="w-40 h-50 mb-0" />
       <div className="flex space-x-4 items-center">
-        {/* Lien Tableau de bord dynamique */}
-        <button
-          onClick={() => navigate(dashboardLink)}
-          className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
-        >
-          Tableau de bord
-        </button>
-        {(role === 'ADMIN' || role === 'CHEF_PROJET') && (
-          <button
-            onClick={() => navigate('/create-project')}
-            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded"
-          >
-            Nouveau projet
-          </button>
-        )}
         <button
           onClick={handleLogout}
           className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded"

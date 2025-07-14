@@ -7,11 +7,11 @@ from rest_framework_simplejwt.views import (
 from .views import RegisterView, CustomTokenObtainPairView, ProfileView, DashboardStatsView, ChefDashboardStatsView, MembreDashboardStatsView
 
 router = DefaultRouter()
-router.register(r'membres', MembreViewSet)
-router.register(r'projets', ProjetViewSet)
-router.register(r'taches', TacheViewSet)
-router.register(r'fichiers', FichierViewSet)
-router.register(r'commentaires', CommentaireViewSet)
+router.register(r'membres', MembreViewSet, basename='membre')
+router.register(r'projets', ProjetViewSet, basename='projet')
+router.register(r'taches', TacheViewSet, basename='tache')
+router.register(r'fichiers', FichierViewSet, basename='fichier')
+router.register(r'commentaires', CommentaireViewSet, basename='commentaire')
 
 urlpatterns = [
     path('', include(router.urls)),

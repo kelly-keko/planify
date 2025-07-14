@@ -6,6 +6,14 @@ class MembreSerializer(serializers.ModelSerializer):
         model = Membre
         fields = '__all__'
 
+class MembreDetailSerializer(serializers.ModelSerializer):
+    user_email = serializers.CharField(source='user.email', read_only=True)
+    user_username = serializers.CharField(source='user.username', read_only=True)
+    
+    class Meta:
+        model = Membre
+        fields = '__all__'
+
 class ProjetSerializer(serializers.ModelSerializer):
     class Meta:
         model = Projet
@@ -13,6 +21,7 @@ class ProjetSerializer(serializers.ModelSerializer):
 
 class TacheSerializer(serializers.ModelSerializer):
     assignee_nom = serializers.CharField(source='assignee.nom', read_only=True)
+    projet_nom = serializers.CharField(source='projet.nom', read_only=True)
     
     class Meta:
         model = Tache

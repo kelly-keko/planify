@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import Sidebar from './Sidebar';
 import Navbar from './Navbar';
 import Commentaires from './Commentaires';
 import FichiersProjet from './FichiersProjet';
@@ -19,6 +18,19 @@ const Loader = () => (
   </div>
 );
 
+const TabButton = ({ active, onClick, children }) => (
+  <button
+    onClick={onClick}
+    className={`px-4 py-2 rounded-t-lg font-medium transition-colors ${
+      active 
+        ? 'bg-white text-blue-600 border-b-2 border-blue-600' 
+        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+    }`}
+  >
+    {children}
+  </button>
+);
+
 const ProjectDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -30,6 +42,7 @@ const ProjectDetail = () => {
   const [role, setRole] = useState(null);
   const [toast, setToast] = useState({ message: '', type: '' });
   const [openComments, setOpenComments] = useState({});
+  const [activeTab, setActiveTab] = useState('info'); // 'info', 'tasks', 'members', 'files'
   const membreId = localStorage.getItem('membre_id');
 
   useEffect(() => {
@@ -143,103 +156,104 @@ const ProjectDetail = () => {
     }
   };
 
-  if (loading) return <Loader />;
-  if (error) return <div className="min-h-screen flex items-center justify-center text-red-600">{error}</div>;
-  if (!project) return null;
+  const renderInfoTab = () => (
+    <div className="space-y-6">
+      <div className="bg-blue-50 p-6 rounded-lg">
+        <h3 className="text-xl font-semibold text-blue-800 mb-4">Informations générales</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <span className="font-semibold text-gray-700">Nom :</span>
+            <p className="text-gray-900">{project.nom}</p>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">Statut :</span>
+            <span className={`px-2 py-1 rounded text-sm ${
+              project.statut === 'Terminé' ? 'bg-green-100 text-green-800' :
+              project.statut === 'En cours' ? 'bg-blue-100 text-blue-800' :
+              'bg-yellow-100 text-yellow-800'
+            }`}>
+              {project.statut}
+            </span>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">Date de début :</span>
+            <p className="text-gray-900">{new Date(project.date_debut).toLocaleDateString()}</p>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">Date de fin :</span>
+            <p className="text-gray-900">{new Date(project.date_fin).toLocaleDateString()}</p>
+          </div>
+          <div className="md:col-span-2">
+            <span className="font-semibold text-gray-700">Description :</span>
+            <p className="text-gray-900 mt-1">{project.description}</p>
+          </div>
+          <div>
+            <span className="font-semibold text-gray-700">Créé par :</span>
+            <p className="text-gray-900">{typeof project.cree_par === 'object' ? project.cree_par.nom : project.cree_par}</p>
+          </div>
+        </div>
+      </div>
 
-  return (
-    <div className="min-h-screen bg-gray-100 flex flex-col">
-      <Navbar />
-      {toast.message && <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: '' })} />}
-      <div className="flex flex-1">
-        <Sidebar />
-        <div className="flex-1">
-          <div className="max-w-2xl mx-auto bg-white rounded shadow p-8 mt-8">
-            <h2 className="text-2xl font-bold text-blue-600 mb-4 text-center">Détail du projet</h2>
-            <div className="mb-4">
-              <span className="font-semibold">Nom :</span> {project.nom}
+      <div className="bg-green-50 p-6 rounded-lg">
+        <h3 className="text-xl font-semibold text-green-800 mb-4">Statistiques du projet</h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-blue-600">
+              {project.membres ? project.membres.length : 0}
             </div>
-            <div className="mb-4">
-              <span className="font-semibold">Description :</span> {project.description}
+            <div className="text-sm text-gray-600">Membres</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-green-600">
+              {project.taches ? project.taches.filter(t => t.statut === 'Terminé').length : 0}
             </div>
-            <div className="mb-4">
-              <span className="font-semibold">Dates :</span> {new Date(project.date_debut).toLocaleDateString()} - {new Date(project.date_fin).toLocaleDateString()}
+            <div className="text-sm text-gray-600">Tâches terminées</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-yellow-600">
+              {project.taches ? project.taches.filter(t => t.statut === 'En cours').length : 0}
             </div>
-            <div className="mb-4">
-              <span className="font-semibold">Statut :</span> {project.statut}
+            <div className="text-sm text-gray-600">En cours</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-red-600">
+              {project.taches ? project.taches.filter(t => t.statut === 'En attente').length : 0}
             </div>
-            <div className="mb-4">
-              <span className="font-semibold">Créé par :</span> {typeof project.cree_par === 'object' ? project.cree_par.nom : project.cree_par}
+            <div className="text-sm text-gray-600">En attente</div>
+          </div>
             </div>
-            <div className="mb-6">
-              <span className="font-semibold">Membres du projet :</span>
-              <ul className="list-disc ml-6 mt-2">
-                {project.membres && project.membres.length > 0 ? (
-                  project.membres.map((m) => (
-                    <li key={m.id} className="flex justify-between items-center">
-                      <span>{m.nom} ({m.role})</span>
-                      {(role === 'ADMIN' || role === 'CHEF_PROJET') && (
-                        <button
-                          onClick={() => handleRemoveMember(m.id)}
-                          className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-sm ml-2"
-                        >
-                          Retirer
-                        </button>
-                      )}
-                    </li>
-                  ))
-                ) : (
-                  <li>Aucun membre associé</li>
-                )}
-              </ul>
-              {(role === 'ADMIN' || role === 'CHEF_PROJET') && (
-                <div className="mt-4 flex space-x-2">
-                  <select
-                    value={selectedMember}
-                    onChange={(e) => setSelectedMember(e.target.value)}
-                    className="border px-3 py-2 rounded flex-1"
-                  >
-                    <option value="">Sélectionner un membre à ajouter</option>
-                    {availableMembers.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.nom} ({member.role})
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={handleAddMember}
-                    disabled={!selectedMember}
-                    className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded disabled:bg-gray-300"
-                  >
-                    Ajouter
-                  </button>
                 </div>
-              )}
             </div>
-            <div className="mb-6">
-              <div className="flex justify-between items-center mb-2">
-                <span className="font-semibold">Tâches du projet :</span>
+  );
+
+  const renderTasksTab = () => (
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h3 className="text-xl font-semibold text-gray-800">Tâches du projet</h3>
                 {(role === 'ADMIN' || role === 'CHEF_PROJET') && (
                   <button
                     onClick={() => navigate(`/projets/${id}/taches/create`)}
-                    className="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-sm"
+            className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center gap-2"
                   >
-                    + Nouvelle tâche
+            <span>+</span> Nouvelle tâche
                   </button>
                 )}
               </div>
-              <div className="bg-gray-50 p-4 rounded">
+      
                 {project.taches && project.taches.length > 0 ? (
                   <div className="space-y-3">
                     {project.taches.map((tache) => (
-                      <div key={tache.id} className="bg-white p-3 rounded border flex justify-between items-center">
+            <div key={tache.id} className="bg-white p-4 rounded-lg border border-gray-200 hover:shadow-md transition-shadow">
+              <div className="flex justify-between items-start">
                         <div className="flex-1">
-                          <div className="font-medium">{tache.nom}</div>
-                          <div className="text-sm text-gray-600">
-                            {tache.description && <span>{tache.description} • </span>}
-                            <span>Du {new Date(tache.date_debut).toLocaleDateString()} au {new Date(tache.date_fin).toLocaleDateString()}</span>
+                  <div className="font-medium text-gray-900 mb-2">{tache.nom}</div>
+                  {tache.description && (
+                    <div className="text-sm text-gray-600 mb-2">{tache.description}</div>
+                  )}
+                  <div className="text-xs text-gray-500 mb-3">
+                    Du {new Date(tache.date_debut).toLocaleDateString()} au {new Date(tache.date_fin).toLocaleDateString()}
                           </div>
-                          <div className="flex gap-2 mt-1">
+                  <div className="flex flex-wrap gap-2">
                             <span className={`px-2 py-1 rounded text-xs ${
                               tache.statut === 'Terminé' ? 'bg-green-100 text-green-800' :
                               tache.statut === 'En cours' ? 'bg-blue-100 text-blue-800' :
@@ -263,8 +277,15 @@ const ProjectDetail = () => {
                             )}
                           </div>
                         </div>
+                <div className="flex gap-2 ml-4">
+                  <button
+                    className="bg-blue-100 text-blue-700 px-3 py-1 rounded text-xs hover:bg-blue-200"
+                    onClick={() => setOpenComments({ ...openComments, [tache.id]: !openComments[tache.id] })}
+                  >
+                    {openComments[tache.id] ? 'Masquer' : 'Commentaires'}
+                  </button>
                         {(role === 'ADMIN' || role === 'CHEF_PROJET') && (
-                          <div className="flex gap-1">
+                    <>
                             <button
                               onClick={() => navigate(`/projets/${id}/taches/${tache.id}/edit`)}
                               className="bg-blue-500 hover:bg-blue-600 text-white px-2 py-1 rounded text-xs"
@@ -277,53 +298,178 @@ const ProjectDetail = () => {
                             >
                               Statut
                             </button>
+                    </>
+                  )}
+                </div>
+              </div>
+              {openComments[tache.id] && (
+                <div className="mt-4 pt-4 border-t border-gray-200">
+                  <Commentaires tacheId={tache.id} membreId={membreId} />
                           </div>
                         )}
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-gray-500 text-center py-4">Aucune tâche associée</p>
+        <div className="text-center py-8">
+          <div className="text-gray-400 text-6xl mb-4">📋</div>
+          <p className="text-gray-500 text-lg">Aucune tâche associée à ce projet</p>
+          {(role === 'ADMIN' || role === 'CHEF_PROJET') && (
+            <button
+              onClick={() => navigate(`/projets/${id}/taches/create`)}
+              className="mt-4 bg-blue-500 hover:bg-blue-600 text-white px-6 py-2 rounded-lg"
+            >
+              Créer la première tâche
+            </button>
                 )}
               </div>
+      )}
             </div>
-            <div className="mb-8">
-              <h3 className="text-xl font-semibold mb-4 text-blue-700">Tâches du projet</h3>
-              {project.taches && project.taches.length > 0 ? (
-                <ul>
-                  {project.taches.map((t) => (
-                    <li key={t.id} className="mb-4 bg-gray-50 p-4 rounded shadow">
-                      <div className="flex flex-col md:flex-row md:justify-between md:items-center">
+  );
+
+  const renderMembersTab = () => (
+    <div className="space-y-6">
+      <div className="bg-white p-6 rounded-lg border border-gray-200">
+        <h3 className="text-xl font-semibold text-gray-800 mb-4">Membres du projet</h3>
+        
+        {project.membres && project.membres.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {project.membres.map((membre) => (
+              <div key={membre.id} className="bg-gray-50 p-4 rounded-lg border">
+                <div className="flex justify-between items-start">
                         <div>
-                          <span className="font-medium">{t.nom}</span>
-                          <span className={`ml-2 text-xs px-2 py-1 rounded ${t.priorite === 'Urgente' ? 'bg-red-600 text-white' : t.priorite === 'Élevée' ? 'bg-orange-400 text-white' : 'bg-gray-200 text-gray-700'}`}>{t.priorite}</span>
-                          <span className={`ml-2 text-xs px-2 py-1 rounded ${t.statut === 'En retard' ? 'bg-red-200 text-red-800' : t.statut === 'En cours' ? 'bg-yellow-200 text-yellow-800' : t.statut === 'Terminé' ? 'bg-green-200 text-green-800' : 'bg-gray-200 text-gray-700'}`}>{t.statut}</span>
-                          <span className="ml-2 text-xs text-gray-500">Échéance : {new Date(t.date_fin).toLocaleDateString()}</span>
+                    <div className="font-medium text-gray-900">{membre.nom}</div>
+                    <div className="text-sm text-gray-600">{membre.email}</div>
+                    <span className={`inline-block mt-2 px-2 py-1 rounded text-xs ${
+                      membre.role === 'ADMIN' ? 'bg-red-100 text-red-800' :
+                      membre.role === 'CHEF_PROJET' ? 'bg-blue-100 text-blue-800' :
+                      'bg-green-100 text-green-800'
+                    }`}>
+                      {membre.role}
+                    </span>
                         </div>
+                  {(role === 'ADMIN' || role === 'CHEF_PROJET') && (
                         <button
-                          className="mt-2 md:mt-0 bg-blue-100 text-blue-700 px-3 py-1 rounded text-xs hover:bg-blue-200"
-                          onClick={() => setOpenComments({ ...openComments, [t.id]: !openComments[t.id] })}
+                      onClick={() => handleRemoveMember(membre.id)}
+                      className="bg-red-500 hover:bg-red-600 text-white px-2 py-1 rounded text-xs"
                         >
-                          {openComments[t.id] ? 'Masquer les commentaires' : 'Voir les commentaires'}
+                      Retirer
                         </button>
+                  )}
+                </div>
                       </div>
-                      {openComments[t.id] && (
-                        <Commentaires tacheId={t.id} membreId={membreId} />
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-gray-500">Aucune tâche pour ce projet.</p>
-              )}
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-8">
+            <div className="text-gray-400 text-6xl mb-4">👥</div>
+            <p className="text-gray-500">Aucun membre associé à ce projet</p>
+          </div>
+        )}
+
+        {(role === 'ADMIN' || role === 'CHEF_PROJET') && (
+          <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+            <h4 className="font-semibold text-blue-800 mb-3">Ajouter un membre</h4>
+            <div className="flex space-x-2">
+              <select
+                value={selectedMember}
+                onChange={(e) => setSelectedMember(e.target.value)}
+                className="border px-3 py-2 rounded flex-1"
+              >
+                <option value="">Sélectionner un membre à ajouter</option>
+                {availableMembers.map((member) => (
+                  <option key={member.id} value={member.id}>
+                    {member.nom} ({member.role})
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleAddMember}
+                disabled={!selectedMember}
+                className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded disabled:bg-gray-300"
+              >
+                Ajouter
+              </button>
             </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderFilesTab = () => (
+    <div className="space-y-4">
+      <h3 className="text-xl font-semibold text-gray-800">Fichiers du projet</h3>
             <FichiersProjet projetId={project.id} />
+    </div>
+  );
+
+  if (loading) return <Loader />;
+  if (error) return <div className="min-h-screen flex items-center justify-center text-red-600">{error}</div>;
+  if (!project) return null;
+
+  return (
+    <div className="min-h-screen bg-gray-100 flex flex-col">
+      <Navbar />
+      {toast.message && <Toast message={toast.message} type={toast.type} onClose={() => setToast({ message: '', type: '' })} />}
+      <div className="flex flex-1">
+        <div className="flex-1 p-6">
+          <div className="max-w-6xl mx-auto">
+            {/* Header */}
+            <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
+              <div className="flex justify-between items-center">
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900">{project.nom}</h1>
+                  <p className="text-gray-600 mt-1">Projet • {project.statut}</p>
+                </div>
             <button
-              className="bg-gray-400 text-white px-4 py-2 rounded"
+                  className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg"
               onClick={() => navigate('/projets')}
             >
-              Retour à la liste
+                  ← Retour à la liste
             </button>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="bg-white rounded-lg shadow-sm">
+              <div className="border-b border-gray-200">
+                <nav className="flex space-x-1 p-4">
+                  <TabButton 
+                    active={activeTab === 'info'} 
+                    onClick={() => setActiveTab('info')}
+                  >
+                    📋 Informations
+                  </TabButton>
+                  <TabButton 
+                    active={activeTab === 'tasks'} 
+                    onClick={() => setActiveTab('tasks')}
+                  >
+                    ✅ Tâches ({project.taches ? project.taches.length : 0})
+                  </TabButton>
+                  <TabButton 
+                    active={activeTab === 'members'} 
+                    onClick={() => setActiveTab('members')}
+                  >
+                    👥 Membres ({project.membres ? project.membres.length : 0})
+                  </TabButton>
+                  <TabButton 
+                    active={activeTab === 'files'} 
+                    onClick={() => setActiveTab('files')}
+                  >
+                    📁 Fichiers
+                  </TabButton>
+                </nav>
+              </div>
+
+              {/* Tab Content */}
+              <div className="p-6">
+                {activeTab === 'info' && renderInfoTab()}
+                {activeTab === 'tasks' && renderTasksTab()}
+                {activeTab === 'members' && renderMembersTab()}
+                {activeTab === 'files' && renderFilesTab()}
+              </div>
+            </div>
           </div>
         </div>
       </div>

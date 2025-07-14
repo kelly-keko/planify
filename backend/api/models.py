@@ -12,6 +12,8 @@ class Membre(models.Model):
     nom = models.CharField(max_length=50, verbose_name="Nom du Membre")
     date_creation = models.DateTimeField(default=timezone.now, verbose_name="Date de Création")
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="MEMBRE", verbose_name="Rôle du Membre")
+    is_active = models.BooleanField(default=True, verbose_name="Compte actif")
+    archived_at = models.DateTimeField(null=True, blank=True, verbose_name="Date d'archivage")
 
     class Meta:
         verbose_name = "Membre"
@@ -52,7 +54,7 @@ class Tache(models.Model):
 
 class Fichier(models.Model):
     nom = models.CharField(max_length=100)
-    chemin = models.CharField(max_length=200)
+    fichier = models.FileField(upload_to='fichiers/', null=True, blank=True)
     date_partage = models.DateField()
     projet = models.ForeignKey(Projet, on_delete=models.CASCADE, related_name="fichiers")
 

@@ -1,5 +1,6 @@
 from django.shortcuts import render
 from django.http import JsonResponse
+from django.utils import timezone
 
 # Create your views here.
 
@@ -11,10 +12,67 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework import permissions
 from rest_framework.decorators import action
+from django.db import models
 
 class MembreViewSet(viewsets.ModelViewSet):
     queryset = Membre.objects.all()
     serializer_class = MembreSerializer
+
+    def get_queryset(self):
+        # Par défaut, ne montrer que les utilisateurs actifs
+        show_archived = self.request.query_params.get('show_archived', 'false').lower() == 'true'
+        if show_archived:
+            return Membre.objects.all()
+        return Membre.objects.filter(is_active=True)
+
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return MembreDetailSerializer
+        return MembreSerializer
+
+    def get_object_for_archive_actions(self):
+        """Récupérer un objet membre sans filtrage par is_active pour les actions d'archivage"""
+        queryset = Membre.objects.all()
+        filter_kwargs = {self.lookup_field: self.kwargs[self.lookup_field]}
+        obj = queryset.get(**filter_kwargs)
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        """Archiver un utilisateur (désactiver sans supprimer)"""
+        try:
+            membre = self.get_object_for_archive_actions()
+            membre.is_active = False
+            membre.archived_at = timezone.now()
+            membre.save()
+            return Response({
+                'success': True, 
+                'message': f'Utilisateur {membre.nom} archivé avec succès'
+            })
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Erreur lors de l\'archivage: {str(e)}'
+            }, status=500)
+
+    @action(detail=True, methods=['post'])
+    def unarchive(self, request, pk=None):
+        """Réactiver un utilisateur archivé"""
+        try:
+            membre = self.get_object_for_archive_actions()
+            membre.is_active = True
+            membre.archived_at = None
+            membre.save()
+            return Response({
+                'success': True, 
+                'message': f'Utilisateur {membre.nom} réactivé avec succès'
+            })
+        except Exception as e:
+            return Response({
+                'success': False,
+                'message': f'Erreur lors de la réactivation: {str(e)}'
+            }, status=500)
 
 class IsChefProjetOrAdmin(permissions.BasePermission):
     """Permission pour autoriser seulement les chefs de projet ou admins à créer/modifier un projet."""
@@ -30,10 +88,52 @@ class IsChefProjetOrAdmin(permissions.BasePermission):
         except Exception:
             return False
 
+class IsMembreOrChefOrAdmin(permissions.BasePermission):
+    """Permission pour permettre aux membres de voir et d'ajouter du contenu."""
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        user = request.user
+        if not user.is_authenticated:
+            return False
+        try:
+            membre = user.membre_profile
+            # Tous les rôles peuvent ajouter du contenu (commentaires, fichiers)
+            # Accepter les formats français et anglais
+            return membre.role in ["ADMIN", "CHEF_PROJET", "MEMBRE"]
+        except Exception:
+            return False
+
+# Ajouter les permissions au MembreViewSet après la définition des classes de permission
+MembreViewSet.permission_classes = [IsChefProjetOrAdmin]
+
 class ProjetViewSet(viewsets.ModelViewSet):
-    queryset = Projet.objects.all()
     serializer_class = ProjetSerializer
-    permission_classes = [IsChefProjetOrAdmin]
+    permission_classes = [IsMembreOrChefOrAdmin]
+
+    def get_permissions(self):
+        """
+        Les membres peuvent voir les projets, mais seuls les chefs/admin peuvent les modifier.
+        """
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'add_member', 'remove_member']:
+            permission_classes = [IsChefProjetOrAdmin]
+        else:
+            permission_classes = [IsMembreOrChefOrAdmin]
+        return [permission() for permission in permission_classes]
+
+    def get_queryset(self):
+        user = self.request.user
+        try:
+            membre = user.membre_profile
+            # ADMIN voit tous les projets
+            if membre.role in ['ADMIN', 'Admin']:
+                return Projet.objects.all()
+            # Les autres (CHEF_PROJET et MEMBRE) ne voient que leurs projets (créés par eux ou où ils sont membres)
+            return Projet.objects.filter(
+                models.Q(cree_par=membre) | models.Q(membres=membre)
+            ).distinct()
+        except:
+            return Projet.objects.none()
 
     def retrieve(self, request, *args, **kwargs):
         self.serializer_class = ProjetDetailSerializer
@@ -72,9 +172,23 @@ class ProjetViewSet(viewsets.ModelViewSet):
         return Response(data)
 
 class TacheViewSet(viewsets.ModelViewSet):
-    queryset = Tache.objects.all()
     serializer_class = TacheSerializer
-    permission_classes = [IsChefProjetOrAdmin]
+    permission_classes = [IsMembreOrChefOrAdmin]
+
+    def get_queryset(self):
+        user = self.request.user
+        try:
+            membre = user.membre_profile
+            # ADMIN voit toutes les tâches
+            if membre.role in ['ADMIN', 'Admin']:
+                return Tache.objects.all()
+            # Les autres ne voient que les tâches des projets où ils sont membres
+            projets_membre = Projet.objects.filter(
+                models.Q(cree_par=membre) | models.Q(membres=membre)
+            )
+            return Tache.objects.filter(projet__in=projets_membre)
+        except:
+            return Tache.objects.none()
 
     def retrieve(self, request, *args, **kwargs):
         self.serializer_class = TacheDetailSerializer
@@ -112,17 +226,80 @@ class TacheViewSet(viewsets.ModelViewSet):
         if nouveau_statut not in statuts_valides:
             return Response({'error': 'Statut invalide'}, status=400)
         
+        # Vérifier que l'utilisateur peut modifier cette tâche
+        user = request.user
+        try:
+            membre = user.membre_profile
+            # ADMIN et CHEF_PROJET peuvent modifier toutes les tâches
+            if membre.role in ['ADMIN', 'CHEF_PROJET']:
+                pass
+            # MEMBRE ne peut modifier que ses tâches assignées
+            elif membre.role == 'MEMBRE':
+                if tache.assignee != membre:
+                    return Response({'error': 'Vous ne pouvez modifier que vos tâches assignées'}, status=403)
+            else:
+                return Response({'error': 'Permission insuffisante'}, status=403)
+        except:
+            return Response({'error': 'Erreur de permission'}, status=403)
+        
         tache.statut = nouveau_statut
         tache.save()
         return Response({'success': True, 'message': f'Statut changé à {nouveau_statut}'})
 
 class FichierViewSet(viewsets.ModelViewSet):
-    queryset = Fichier.objects.all()
     serializer_class = FichierSerializer
+    permission_classes = [IsMembreOrChefOrAdmin]
+
+    def get_queryset(self):
+        user = self.request.user
+        try:
+            membre = user.membre_profile
+            # ADMIN voit tous les fichiers
+            if membre.role in ['ADMIN', 'Admin']:
+                queryset = Fichier.objects.all()
+            else:
+                # Les autres ne voient que les fichiers des projets où ils sont membres
+                projets_membre = Projet.objects.filter(
+                    models.Q(cree_par=membre) | models.Q(membres=membre)
+                )
+                queryset = Fichier.objects.filter(projet__in=projets_membre)
+            
+            # Filtrer par projet si le paramètre est fourni
+            projet_id = self.request.query_params.get('projet')
+            if projet_id:
+                queryset = queryset.filter(projet_id=projet_id)
+            
+            return queryset
+        except:
+            return Fichier.objects.none()
 
 class CommentaireViewSet(viewsets.ModelViewSet):
-    queryset = Commentaire.objects.all()
     serializer_class = CommentaireSerializer
+    permission_classes = [IsMembreOrChefOrAdmin]
+
+    def get_queryset(self):
+        user = self.request.user
+        try:
+            membre = user.membre_profile
+            # ADMIN voit tous les commentaires
+            if membre.role in ['ADMIN', 'Admin']:
+                queryset = Commentaire.objects.all()
+            else:
+                # Les autres ne voient que les commentaires des tâches des projets où ils sont membres
+                projets_membre = Projet.objects.filter(
+                    models.Q(cree_par=membre) | models.Q(membres=membre)
+                )
+                taches_membre = Tache.objects.filter(projet__in=projets_membre)
+                queryset = Commentaire.objects.filter(tache__in=taches_membre)
+            
+            # Filtrer par tâche si le paramètre est fourni
+            tache_id = self.request.query_params.get('tache')
+            if tache_id:
+                queryset = queryset.filter(tache_id=tache_id)
+            
+            return queryset
+        except:
+            return Commentaire.objects.none()
 
 
 def accueil(request):
@@ -280,13 +457,36 @@ class ChefDashboardStatsView(APIView):
         user = request.user
         try:
             membre = user.membre_profile
+            print(f"Utilisateur: {user.username}, Membre: {membre.nom}, Role: {membre.role}")
+        except Exception as e:
+            print(f"Erreur profil membre: {e}")
+            return DRFResponse({'error': 'Profil membre non trouvé pour cet utilisateur'}, status=400)
+        
+        try:
             # Projets où il est chef
             projets_chef = Projet.objects.filter(cree_par=membre)
-            projets_ids = projets_chef.values_list('id', flat=True)
+            projets_ids = list(projets_chef.values_list('id', flat=True))
+            print(f"Nombre de projets trouvés: {projets_chef.count()}")
+            
+            # Gérer le cas où il n'y a pas de projets
+            if not projets_ids:
+                return DRFResponse({
+                    'projets_count': 0,
+                    'taches_total': 0,
+                    'taches_terminees': 0,
+                    'taches_en_cours': 0,
+                    'taches_retard': 0,
+                    'projets': [],
+                    'membres': [],
+                    'activites': [],
+                })
+            
             taches_total = Tache.objects.filter(projet_id__in=projets_ids).count()
             taches_terminees = Tache.objects.filter(projet_id__in=projets_ids, statut='Terminé').count()
             taches_en_cours = Tache.objects.filter(projet_id__in=projets_ids, statut='En cours').count()
             taches_retard = Tache.objects.filter(projet_id__in=projets_ids, date_fin__lt=timezone.now().date()).exclude(statut='Terminé').count()
+            
+            # Données des projets
             projets_data = [
                 {
                     'id': p.id,
@@ -296,6 +496,50 @@ class ChefDashboardStatsView(APIView):
                     'date_fin': p.date_fin,
                 } for p in projets_chef
             ]
+            
+            # Membres des projets (tous les membres qui participent aux projets du chef)
+            membres_projets = Membre.objects.filter(projets_membre__in=projets_chef).distinct()
+            membres_data = []
+            for m in membres_projets:
+                # Compter les tâches assignées à ce membre dans les projets du chef
+                taches_membre = Tache.objects.filter(
+                    projet_id__in=projets_ids,
+                    assignee=m
+                ).count()
+                membres_data.append({
+                    'id': m.id,
+                    'nom': m.nom,
+                    'role': m.role,
+                    'taches': taches_membre,
+                })
+            
+            # Activités récentes (tâches créées/modifiées/terminées dans les projets du chef)
+            taches_recentes = Tache.objects.filter(
+                projet_id__in=projets_ids
+            ).order_by('-date_debut')[:10]
+            
+            activites_data = []
+            for tache in taches_recentes:
+                # Déterminer le type d'activité basé sur le statut et la date
+                if tache.statut == 'Terminé':
+                    action = 'terminée'
+                    date_activite = tache.date_fin
+                elif tache.statut == 'En cours':
+                    action = 'démarrée'
+                    date_activite = tache.date_debut
+                else:
+                    action = 'créée'
+                    date_activite = tache.date_debut
+                
+                activites_data.append({
+                    'type': 'tache',
+                    'action': action,
+                    'nom': tache.nom,
+                    'date': date_activite.strftime('%Y-%m-%d'),
+                    'user': tache.assignee.nom if tache.assignee else 'Non assignée',
+                    'projet': tache.projet.nom,
+                })
+            
             return DRFResponse({
                 'projets_count': projets_chef.count(),
                 'taches_total': taches_total,
@@ -303,9 +547,15 @@ class ChefDashboardStatsView(APIView):
                 'taches_en_cours': taches_en_cours,
                 'taches_retard': taches_retard,
                 'projets': projets_data,
+                'membres': membres_data,
+                'activites': activites_data,
             })
-        except Exception:
-            return DRFResponse({'error': 'Profil chef de projet non trouvé'}, status=404)
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"Erreur dans ChefDashboardStatsView: {str(e)}")
+            print(f"Traceback: {error_details}")
+            return DRFResponse({'error': f'Erreur lors de la récupération des données: {str(e)}'}, status=500)
 
 class MembreDashboardStatsView(APIView):
     permission_classes = [IsAuthenticated]
@@ -313,6 +563,10 @@ class MembreDashboardStatsView(APIView):
         user = request.user
         try:
             membre = user.membre_profile
+        except:
+            return DRFResponse({'error': 'Profil membre non trouvé pour cet utilisateur'}, status=400)
+        
+        try:
             projets = membre.projets_membre.all()
             taches_assignees = membre.taches_assignees.all()
             taches_terminees = taches_assignees.filter(statut='Terminé').count()
@@ -345,6 +599,6 @@ class MembreDashboardStatsView(APIView):
                 'projets': projets_data,
                 'taches': taches_data,
             })
-        except Exception:
-            return DRFResponse({'error': 'Profil membre non trouvé'}, status=404)
+        except Exception as e:
+            return DRFResponse({'error': f'Erreur lors de la récupération des données: {str(e)}'}, status=500)
 
